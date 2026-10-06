@@ -11,3 +11,5 @@
 *.mp3  binary
 *.ogg  binary
 *.opus binary
+*.gif  binary
+*.mp4  binary

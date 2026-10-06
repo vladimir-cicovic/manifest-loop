@@ -4,6 +4,19 @@ A calm, endlessly shuffling vision-board slideshow for manifestation.
 Images from your folders rotate every 15 seconds with soft transitions and relaxing music.
 It works offline as plain HTML, or online so you can watch it on your phone or TV.
 
+## Demo
+
+<a href="docs/demo.mp4">
+  <img src="docs/demo.gif" alt="manifest-loop demo: start screen, images crossfading with category labels, next, shuffle and pause controls" width="720">
+</a>
+
+▶ **[Watch the 30-second demo with music (MP4)](docs/demo.mp4)**
+
+The demo shows the start screen, images crossfading with a slow zoom, the category label in
+the top-left corner, the **Next**, **Shuffle** and **Pause** controls, and the controls fading
+away when the mouse stops moving. The music is Erik Satie's Gymnopédie No. 1, one of the
+bundled tracks.
+
 ## What it is for
 
 Manifestation is the practice of focusing your attention on what you want in life: the home,
@@ -201,6 +214,7 @@ manifest-loop/
 ├── start.sh                    # Online mode for Linux / macOS (Python http.server)
 ├── update-playlist.bat         # Offline helper for Windows
 ├── nginx/manifest-loop.conf    # Example nginx site
+├── docs/demo.mp4, demo.gif     # Demo video (with music) and animated preview
 ├── .gitignore                  # Keeps my_* images, my_* music and playlist.js private
 └── CREDITS.md                  # Photographers, musicians and licenses
 ```
