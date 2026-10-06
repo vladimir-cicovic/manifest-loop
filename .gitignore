@@ -1,0 +1,12 @@
+# Personal images and music downloaded for private use stay on your computer.
+# Name your own folders and files with a "my_" prefix and they will never be committed.
+images/my_*
+music/my_*
+
+# The generated playlist would list your private file names
+playlist.js
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini

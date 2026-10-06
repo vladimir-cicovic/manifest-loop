@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>manifest-loop</title>
+<style>
+  :root { --fade: 2s; --accent: #f5d38a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #000; color: #fff; overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif; }
+
+  .layer { position: fixed; inset: 0; opacity: 0; transition: opacity var(--fade) ease-in-out; }
+  .layer.show { opacity: 1; }
+  .layer .bg { position: absolute; inset: -40px; background-size: cover; background-position: center;
+    filter: blur(30px) brightness(.45); }
+  .layer img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    transform: scale(1); transition: transform 16s linear; }
+  .layer.show img.zoom { transform: scale(1.08); }
+
+  #ui { position: fixed; left: 0; right: 0; bottom: 0; padding: 18px 24px 22px;
+    background: linear-gradient(transparent, rgba(0,0,0,.75));
+    transition: opacity .6s; display: flex; flex-direction: column; gap: 12px; }
+  body.idle #ui, body.idle #label { opacity: 0; }
+  body.idle { cursor: none; }
+
+  #bar { height: 3px; background: rgba(255,255,255,.2); border-radius: 2px; overflow: hidden; }
+  #fill { height: 100%; width: 0; background: var(--accent); }
+
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  button { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px; padding: 9px 16px; font-size: 15px; cursor: pointer;
+    backdrop-filter: blur(6px); transition: background .2s; }
+  button:hover { background: rgba(255,255,255,.25); }
+  button.big { font-size: 18px; padding: 9px 20px; }
+  button.gold { border-color: var(--accent); color: var(--accent); }
+  #info, #song { font-size: 13px; opacity: .8; }
+  input[type=range] { width: 90px; accent-color: var(--accent); }
+
+  #label { position: fixed; top: 22px; left: 26px; font-size: 14px; letter-spacing: .15em;
+    text-transform: uppercase; color: var(--accent); text-shadow: 0 1px 6px #000; transition: opacity .6s; }
+
+  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 22px; background: radial-gradient(#1c1a14, #000); z-index: 10;
+    text-align: center; padding: 16px; }
+  #start h1 { font-weight: 300; font-size: clamp(32px, 6vw, 64px); letter-spacing: .1em; color: var(--accent); }
+  #start p { opacity: .7; max-width: 560px; line-height: 1.6; }
+  #start button { font-size: 20px; padding: 14px 34px; }
+  #start .keys { font-size: 13px; opacity: .5; }
+</style>
+</head>
+<body>
+
+<div class="layer" id="a"><div class="bg"></div><img alt=""></div>
+<div class="layer" id="b"><div class="bg"></div><img alt=""></div>
+<div id="label"></div>
+
+<div id="ui">
+  <div id="bar"><div id="fill"></div></div>
+  <div class="row">
+    <button class="big" id="prev" title="Previous (←)">⏮</button>
+    <button class="big" id="play" title="Pause / resume (Space)">⏸</button>
+    <button class="big" id="next" title="Next (→)">⏭</button>
+    <button class="gold" id="shuffle" title="New random order (N)">🔀 Shuffle</button>
+    <span id="info"></span>
+    <span class="spacer"></span>
+    <button id="music" title="Music on / off (M)">🎵 Music</button>
+    <button id="nextSong" title="Next track">⏭ Track</button>
+    <input type="range" id="vol" min="0" max="1" step="0.05" value="0.5" title="Volume">
+    <span id="song"></span>
+    <button id="fs" title="Fullscreen (F)">⛶</button>
+  </div>
+</div>
+
+<div id="start">
+  <h1>MANIFEST LOOP</h1>
+  <p id="startInfo"></p>
+  <button class="gold" id="go">▶ Start</button>
+  <div class="keys">Space = pause · ← → = previous / next · N = shuffle · M = music · F = fullscreen</div>
+</div>
+
+<!-- playlist.sample.js lists the bundled samples; playlist.js (generated, not committed) overrides it when present -->
+<script src="playlist.sample.js"></script>
+<script src="playlist.js"></script>
+<script>
+const SLIDE_MS = 15000; // 15 seconds per image
+
+const images = window.MANIFEST_IMAGES || [];
+const tracks = window.MANIFEST_MUSIC || [];
+const $ = id => document.getElementById(id);
+const layers = [$('a'), $('b')];
+let front = 0, order = [], pos = 0, paused = false;
+let elapsed = 0, lastTick = 0;
+
+function url(p) { return p.split('/').map(encodeURIComponent).join('/'); }
+
+// "inside_apartment" -> "Inside apartment"; the private "my_" prefix is hidden ("my_dream_home" -> "Dream home")
+function categoryLabel(c) { const s = c.replace(/^my[_-]/i, '').replace(/[_-]+/g, ' ').trim(); return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function newOrder() {
+  // Random order, but avoid two images from the same category in a row when possible
+  const a = shuffle(images.map((_, i) => i));
+  for (let i = 1; i < a.length; i++) {
+    if (images[a[i]].cat === images[a[i - 1]].cat) {
+      const j = a.findIndex((v, k) => k > i && images[v].cat !== images[a[i - 1]].cat);
+      if (j > 0) [a[i], a[j]] = [a[j], a[i]];
+    }
+  }
+  order = a; pos = 0;
+}
+
+function preload(i) { if (order.length) new Image().src = url(images[order[i % order.length]].src); }
+
+function show() {
+  if (!order.length) return;
+  const s = images[order[pos]];
+  const back = layers[1 - front];
+  const img = back.querySelector('img');
+  img.classList.remove('zoom');
+  img.onload = () => {
+    back.querySelector('.bg').style.backgroundImage = `url("${img.src}")`;
+    back.classList.add('show');
+    layers[front].classList.remove('show');
+    front = 1 - front;
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!paused) img.classList.add('zoom'); }));
+  };
+  img.onerror = () => { step(1); };
+  img.src = url(s.src);
+  $('label').textContent = categoryLabel(s.cat);
+  $('info').textContent = `${pos + 1} / ${order.length}`;
+  elapsed = 0;
+  preload(pos + 1);
+}
+
+function step(d) {
+  pos = (pos + d + order.length) % order.length;
+  show();
+}
+
+function setPaused(p) {
+  paused = p;
+  $('play').textContent = p ? '▶' : '⏸';
+  const img = layers[front].querySelector('img');
+  if (p) { img.style.transform = getComputedStyle(img).transform; img.classList.remove('zoom'); }
+  else { img.style.transform = ''; img.classList.add('zoom'); }
+}
+
+function tick() {
+  const t = performance.now();
+  if (!paused && order.length) {
+    elapsed += t - lastTick;
+    if (elapsed >= SLIDE_MS) step(1);
+  }
+  lastTick = t;
+  $('fill').style.width = Math.min(100, elapsed / SLIDE_MS * 100) + '%';
+}
+
+// ---------- Music ----------
+const audio = new Audio();
+let trackOrder = shuffle(tracks.map((_, i) => i)), trackPos = 0, musicOn = true;
+audio.volume = 0.5;
+// "music/03_chopin_nocturne_op_9_no_2.ogg" -> "Chopin Nocturne Op 9 No 2"
+function trackName(p) {
+  return p.split('/').pop().replace(/\.[^.]+$/, '').replace(/^my[_-]/i, '').replace(/^\d+[_-]/, '').replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+function playTrack() {
+  if (!tracks.length) { $('song').textContent = 'No music found in the music folder'; return; }
+  const p = tracks[trackOrder[trackPos]];
+  audio.src = url(p);
+  $('song').textContent = '♪ ' + trackName(p);
+  if (musicOn) audio.play().catch(() => {});
+}
+function nextTrack() { trackPos = (trackPos + 1) % trackOrder.length; playTrack(); }
+audio.addEventListener('ended', nextTrack);
+audio.addEventListener('error', nextTrack);
+function toggleMusic() {
+  musicOn = !musicOn;
+  $('music').style.opacity = musicOn ? 1 : .5;
+  musicOn ? audio.play().catch(() => {}) : audio.pause();
+}
+
+// ---------- Controls ----------
+$('prev').onclick = () => step(-1);
+$('next').onclick = () => step(1);
+$('play').onclick = () => setPaused(!paused);
+$('shuffle').onclick = () => { newOrder(); show(); };
+$('music').onclick = toggleMusic;
+$('nextSong').onclick = nextTrack;
+$('vol').oninput = e => { audio.volume = e.target.value; };
+$('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+
+document.addEventListener('keydown', e => {
+  if ($('start').style.display !== 'none') return;
+  if (e.key === ' ') { e.preventDefault(); setPaused(!paused); }
+  else if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowLeft') step(-1);
+  else if (e.key.toLowerCase() === 'n') { newOrder(); show(); }
+  else if (e.key.toLowerCase() === 'm') toggleMusic();
+  else if (e.key.toLowerCase() === 'f') $('fs').click();
+});
+
+let idleTimer;
+function wake() {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+}
+['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, wake));
+
+// ---------- Start ----------
+const cats = [...new Set(images.map(s => s.cat))];
+$('startInfo').textContent = images.length
+  ? `${images.length} images in ${cats.length} categories · ${tracks.length} tracks · ${SLIDE_MS / 1000} seconds per image`
+  : 'No images found. Run scripts/generate-playlist (.ps1 or .sh) to build the playlist.';
+$('go').onclick = () => {
+  $('start').style.display = 'none';
+  newOrder(); show(); playTrack(); wake();
+  lastTick = performance.now();
+  setInterval(tick, 100);
+};
+</script>
+</body>
+</html>
